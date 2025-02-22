@@ -1,0 +1,24 @@
+a13x-depinj/
+├── src/
+│   └── a13x_depinj/
+│       ├── __init__.py
+│       ├── registry.py
+│       ├── config.py
+│       ├── errors.py
+│       └── utils.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_registry.py
+│   ├── test_config.py
+│   └── test_utils.py
+├── examples/
+│   ├── basic_usage.py
+│   └── advanced_usage.py
+├── docs/
+│   ├── README.md
+│   └── CONTRIBUTING.md
+├── pyproject.toml
+├── setup.cfg
+├── README.md
+├── LICENSE
+└── .gitignore
