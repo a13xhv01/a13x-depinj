@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
-from typing import TypeVar, Type, Dict, Any, Optional, Generic
+from typing import TypeVar, Type, TypeVar, Dict, Any, Optional, Generic, List
 import yaml
 
 from .config import Config
@@ -67,11 +67,13 @@ class ComponentRegistry(Generic[T], metaclass=Singleton):
     def __init__(self):
         self._components: Dict[Type[T], T] = {}
         self._configs: Dict[Type[T], Dict[str, Any]] = {}
+        self._injects: Dict[Type[T], List[Any]] = {}
         self._initialized: Dict[Type[T], bool] = {}
     
     def register(
         self, 
-        component_type: Type[T], 
+        component_type: Type[T],
+        injects: Optional[List[Any]] = None,
         config: Optional[Dict[str, Any]] = None,
         lazy: bool = False
     ) -> None:
@@ -88,6 +90,7 @@ class ComponentRegistry(Generic[T], metaclass=Singleton):
         """
         try:
             self._configs[component_type] = config or {}
+            self._injects[component_type] = injects or {}
             if not lazy:
                 self._initialize_component(component_type)
             else:
@@ -108,7 +111,10 @@ class ComponentRegistry(Generic[T], metaclass=Singleton):
             ComponentInitializationError: If initialization fails
         """
         try:
-            instance = component_type(self._configs[component_type])
+            if self._injects[component_type]:
+                instance = component_type(*self._injects[component_type], self._configs[component_type])
+            else:
+                instance = component_type(self._configs[component_type])
             self._components[component_type] = instance
             self._initialized[component_type] = True
         except Exception as e:
@@ -154,6 +160,48 @@ class ComponentRegistry(Generic[T], metaclass=Singleton):
         self._initialized.pop(component_type, None)
 
     @classmethod
+    def process_config_paths(cls, config_path):
+        """
+        Process config_path which might be None, a single string, or a string with multiple paths.
+        Returns a list of trimmed paths (empty list if None).
+        """
+        # If None, return empty list
+        if config_path is None:
+            return []
+        
+        # If it's a string, split it by comma (adjust delimiter if needed)
+        if isinstance(config_path, str):
+            # Split and trim each path
+            paths = [path.strip() for path in config_path.split(',')]
+            # Filter out any empty strings that might result from extra commas
+            return [path for path in paths if path]
+        
+        # If it's already a list or another iterable, ensure each item is trimmed
+        return [str(path).strip() for path in config_path]
+
+    @classmethod
+    def get_class_from_string(cls, full_class_path: str) -> Type[T]:
+        """
+        Convert a fully qualified class path string to a class type.
+        
+        Args:
+            full_class_path: String path in format "module.path.ClassName"
+            
+        Returns:
+            The actual class type
+        """
+        # Split on the last dot to separate module path from class name
+        module_path, class_name = full_class_path.rsplit('.', 1)
+        
+        # Import the module
+        module = importlib.import_module(module_path)
+        
+        # Get the class from the module
+        class_type = getattr(module, class_name)
+        
+        return class_type
+
+    @classmethod
     def from_yaml(
         cls, 
         cfg: Config, 
@@ -187,30 +235,47 @@ class ComponentRegistry(Generic[T], metaclass=Singleton):
                     f"Invalid YAML structure in {yaml_path}. 'components' key missing."
                 )
                 
-            for component_config in config['components']:
+            for component in config['components']:
                 try:
-                    if not all(k in component_config for k in ('module', 'class')):
+                    if not all(k in component for k in ('module', 'class')):
                         raise InvalidConfigurationError(
                             f"Component configuration must include 'module' and 'class'"
                         )
                         
-                    module = importlib.import_module(component_config['module'])
-                    component_class = getattr(module, component_config['class'])
-                    
-                    config_path = component_config.get('config_path', {})
-                    if config_path:
-                        config_params = cfg.get(config_path)
-                    component_params = cfg.get(config_path) if config_path else None
+                    module = importlib.import_module(component['module'])
+                    component_class = getattr(module, component['class'])
+                    injects = component.get('inject', [])
+
+                    inject_cls: List[Type[T]] = []
+                    if injects:
+                        for i in injects:
+                            x = registry.get_class_from_string(i)
+                            inst = registry.get(x)
+                            inject_cls.append(inst)
+                    component_params = component.get('params', None)
+                    component_config: Optional[Dict[str, Any]] = None
+                    if component_params:
+                        config_path = component_params.get('config_path', None)
+                        # config_path may contain multiple references comma separated
+                        list_of_configs: Optional[List[str]] = ComponentRegistry.process_config_paths(config_path)
+                        if list_of_configs:
+                            for x in list_of_configs:
+                                x_cfg = cfg.get(x) if x else None
+                                if x_cfg:
+                                    if component_config is None:
+                                        component_config = {}
+                                    component_config.update(x_cfg)
                     
                     registry.register(
                         component_class,
-                        component_params,
+                        inject_cls,
+                        component_config,
                         lazy=lazy
                     )
                     
                 except (ImportError, AttributeError) as e:
                     raise InvalidConfigurationError(
-                        f"Failed to load component {component_config}: {str(e)}"
+                        f"Failed to load component {component}: {str(e)}"
                     ) from e
                     
         except Exception as e:
