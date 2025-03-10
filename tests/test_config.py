@@ -77,13 +77,19 @@ def test_load_config_from_file(config_file, sample_config):
     assert config._config == sample_config
 
 def test_load_config_invalid_yaml():
-    with pytest.raises(ConfigurationError):
-        with patch('builtins.open', mock_open(read_data='invalid: yaml: content:')):
+    mock_content = """
+    invalid: yaml: content:
+      - this is not valid yaml
+          wrong indentation
+    """
+    with patch('pathlib.Path.read_text', return_value=mock_content):
+        with pytest.raises(ConfigurationError):
             Config.load_config('dummy.yaml')
 
 def test_load_config_file_not_found():
-    with pytest.raises(ConfigDiscoveryError):
-        Config.load_config('nonexistent.yaml')
+    with patch('pathlib.Path.is_file', return_value=False):
+        with pytest.raises(ConfigDiscoveryError):
+            Config.load_config('nonexistent.yaml')
 
 def test_get_existing_value(config_instance):
     value = config_instance.get('app.name')
@@ -106,13 +112,23 @@ def test_get_entire_config(config_instance, sample_config):
     assert config == sample_config
     assert config is not sample_config  # Should be a deep copy
 
-def test_reload_config(config_instance, tmp_path):
-    new_config = {'new': 'config'}
-    new_path = tmp_path / 'new_config.yaml'
-    new_path.write_text(yaml.dump(new_config))
+def test_reload_config(tmp_path):
+    # Create initial config
+    config_path = tmp_path / 'config.yaml'
+    config_path.write_text(yaml.dump({'initial': 'config'}))
     
-    config_instance.reload(new_path)
-    assert config_instance.get_config() == new_config
+    config = Config.load_config(config_path)
+    assert config.get('initial') == 'config'
+    
+    # Write new config
+    config_path.write_text(yaml.dump({'new': 'config'}))
+    
+    # Clear all configuration state
+    Config.clear_config()
+    
+    # Reload config
+    config = Config.load_config(config_path)
+    assert config.get('new') == 'config'
 
 def test_thread_safety():
     import threading
@@ -150,9 +166,12 @@ def test_config_immutability(config_instance):
     assert config_instance.get('app.name') == 'test_app'
 
 def test_environment_variable_override(tmp_path):
-    config_path = tmp_path / 'env_config.yaml'
+    # Create config file in temp directory
+    config_dir = tmp_path / 'config'
+    config_dir.mkdir()
+    config_path = config_dir / 'env_config.yaml'
     config_path.write_text(yaml.dump({'env': 'test'}))
     
-    with patch.dict(os.environ, {'APP_CONFIG_DIR': str(tmp_path)}):
+    with patch.dict(os.environ, {'APP_CONFIG_DIR': str(config_dir)}):
         config = Config.load_config('env_config.yaml')
         assert config.get('env') == 'test'

@@ -1,0 +1,17 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+src/a13x_depinj/__init__.py
+src/a13x_depinj/config.py
+src/a13x_depinj/errors.py
+src/a13x_depinj/registry.py
+src/a13x_depinj/utils.py
+src/a13x_depinj.egg-info/PKG-INFO
+src/a13x_depinj.egg-info/SOURCES.txt
+src/a13x_depinj.egg-info/dependency_links.txt
+src/a13x_depinj.egg-info/requires.txt
+src/a13x_depinj.egg-info/top_level.txt
+tests/test_config.py
+tests/test_registry.py
+tests/test_utils.py

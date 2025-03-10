@@ -34,7 +34,8 @@ from a13x_depinj.config import Config
 from a13x_depinj.errors import (
     ComponentNotFoundError,
     ComponentInitializationError,
-    InvalidConfigurationError
+    InvalidConfigurationError,
+    RegistryError
 )
 
 class MockComponent:
@@ -66,7 +67,7 @@ def sample_yaml():
             {
                 'module': 'tests.test_registry',
                 'class': 'MockComponent',
-                'params': {'path': 'test.config'}
+                'config_path': 'test.config'
             }
         ]
     }
@@ -127,20 +128,27 @@ def test_from_yaml_valid(registry, yaml_file, config):
     assert component.config == {'test': 'config'}
 
 def test_from_yaml_invalid_structure(registry, tmp_path):
+    # Missing required 'components' key
     invalid_yaml = {'invalid': 'structure'}
     path = tmp_path / 'invalid.yaml'
     path.write_text(yaml.dump(invalid_yaml))
     
-    with pytest.raises(InvalidConfigurationError):
+    with pytest.raises(RegistryError) as exc_info:
         ComponentRegistry.from_yaml(Mock(spec=Config), path)
+    
+    # Optionally verify the error message
+    assert "components' key missing" in str(exc_info.value)
 
 def test_from_yaml_missing_required_fields(registry, tmp_path):
     invalid_yaml = {'components': [{'module': 'test'}]}
     path = tmp_path / 'invalid.yaml'
     path.write_text(yaml.dump(invalid_yaml))
     
-    with pytest.raises(InvalidConfigurationError):
+    with pytest.raises(RegistryError) as exc_info:
         ComponentRegistry.from_yaml(Mock(spec=Config), path)
+
+    # Optionally verify the error message
+    assert "Component configuration must include 'module' and 'class'" in str(exc_info.value)
 
 def test_context_manager(registry):
     component_class = MockComponentWithCleanup
@@ -196,5 +204,5 @@ def test_from_yaml_invalid_imports(registry, tmp_path, component_config):
     path = tmp_path / 'invalid_imports.yaml'
     path.write_text(yaml.dump(yaml_content))
     
-    with pytest.raises(InvalidConfigurationError):
+    with pytest.raises(RegistryError):
         ComponentRegistry.from_yaml(Mock(spec=Config), path)

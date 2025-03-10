@@ -135,11 +135,20 @@ def test_is_valid_identifier(identifier, expected):
 def test_validate_class_name(class_name, expected):
     assert validate_class_name(class_name) == expected
 
-def test_discover_project_root_cache():
-    with patch("pathlib.Path.cwd") as mock_cwd:
-        mock_cwd.return_value = Path("/tmp/project")
+def test_discover_project_root_cache(temp_project_structure):
+    tmp_path = temp_project_structure
+    with patch("pathlib.Path.cwd") as mock_cwd, \
+         patch.object(Path, "exists") as mock_exists:
+        mock_cwd.return_value = Path(tmp_path)
+        
+        # Mock exists to return True only for specific project markers
+        def mock_exists_impl(path):
+            return path.name in {'.git', 'pyproject.toml'}
+        mock_exists.side_effect = mock_exists_impl
+        
         discover_project_root()
         discover_project_root()
+        
         assert mock_cwd.call_count == 1  # Function result was cached
 
 def test_discover_project_root_invalid_path():
